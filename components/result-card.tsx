@@ -13,6 +13,14 @@ export function ResultCard({ result }: { result: ExtractionResponse }) {
   const selectedQualityObj = result.qualities?.find((q) => q.url === selectedDownloadUrl)
   const isAudioSelected = selectedQualityObj?.format === 'mp3' || selectedDownloadUrl.endsWith('.mp3')
 
+  // Generate safe filename
+  const cleanTitle = (result.title || 'media').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 40)
+  const ext = isAudioSelected ? 'mp3' : 'mp4'
+  const filename = `${cleanTitle}.${ext}`
+
+  // Proxy download URL to guarantee downloads work seamlessly without CORS/403 blocks in production
+  const proxyDownloadUrl = `/api/proxy?url=${encodeURIComponent(selectedDownloadUrl)}&filename=${encodeURIComponent(filename)}`
+
   async function copyLink(urlToCopy = selectedDownloadUrl) {
     await navigator.clipboard.writeText(urlToCopy)
     setCopied(true)
@@ -93,13 +101,11 @@ export function ResultCard({ result }: { result: ExtractionResponse }) {
           {/* Action Row */}
           <div className="flex flex-wrap items-center gap-2 border-t border-[#e7e7e7] pt-3">
             <a
-              href={selectedDownloadUrl}
-              download
-              target="_blank"
-              rel="noreferrer"
+              href={proxyDownloadUrl}
+              download={filename}
               className="inline-flex h-9 items-center justify-center rounded-lg bg-[#0078d4] px-4 text-xs font-semibold text-[#ffffff] transition-colors duration-200 hover:bg-[#2a446f] active:bg-[#17253d]"
             >
-              <Download className="mr-1.5 size-3.5" /> Download Media
+              <Download className="mr-1.5 size-3.5" /> Download HD
             </a>
             <button
               type="button"
@@ -122,7 +128,7 @@ export function ResultCard({ result }: { result: ExtractionResponse }) {
               rel="noreferrer"
               className="inline-flex size-9 items-center justify-center rounded-lg border border-[#e7e7e7] bg-[#ffffff] text-[#616161] transition-colors duration-200 hover:bg-[#f5f5f5] hover:text-[#17253d]"
               aria-label="Open in new tab"
-              title="Open stream link"
+              title="Open stream link directly"
             >
               <ExternalLink className="size-3.5" />
             </a>

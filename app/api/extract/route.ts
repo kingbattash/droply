@@ -2,6 +2,10 @@ import { NextResponse } from 'next/server'
 import { extractMedia, getPlatformFromUrl, isSupportedMediaUrl } from '@/lib/extraction'
 import { ExtractorError } from '@/services'
 
+export const dynamic = 'force-dynamic'
+export const maxDuration = 30
+export const revalidate = 0
+
 export async function POST(request: Request) {
   try {
     const body = await request.json()

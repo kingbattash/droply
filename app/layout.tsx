@@ -5,6 +5,7 @@ import './globals.css'
 export const metadata: Metadata = {
   title: 'Droply — Download social videos in HD',
   description: 'A fast, clean way to save public TikTok and Instagram videos in HD.',
+  referrer: 'no-referrer', // Critical for preventing TikTok/Instagram CDN 403 hotlink blocks in production
   generator: 'v0.app',
   icons: {
     icon: [
@@ -40,6 +41,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head>
+        <meta name="referrer" content="no-referrer" />
+      </head>
       <body className="antialiased">
         {children}
         {process.env.NODE_ENV === 'production' && <Analytics />}
