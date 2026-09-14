@@ -11,6 +11,7 @@ import {
   ExtractOptions,
   ExtractorError,
   MediaDownloadOption,
+  MediaItem,
   MediaMetadata,
   SupportedPlatform,
 } from '../types'
@@ -114,6 +115,38 @@ export class TikTokExtractor extends BaseExtractor {
     }
 
     const qualities: MediaDownloadOption[] = []
+    const mediaItems: MediaItem[] = []
+
+    // Check for photo mode / multi-image slideshow
+    const images: string[] = Array.isArray(d.images) ? d.images : []
+    if (images.length > 0) {
+      images.forEach((imgUrl: string, idx: number) => {
+        const fullImgUrl = formatUrl(imgUrl)
+        if (fullImgUrl) {
+          mediaItems.push({
+            id: `${id}-img-${idx + 1}`,
+            type: 'image',
+            url: fullImgUrl,
+            thumbnail: fullImgUrl,
+            qualities: [
+              {
+                quality: `HD Photo ${idx + 1} (JPG)`,
+                url: fullImgUrl,
+                format: 'jpg',
+                hasWatermark: false,
+              },
+            ],
+          })
+          // Also add each photo to qualities list
+          qualities.push({
+            quality: `Photo ${idx + 1} (HD)`,
+            url: fullImgUrl,
+            format: 'jpg',
+            hasWatermark: false,
+          })
+        }
+      })
+    }
 
     // 1080p HD No Watermark (Highest priority)
     if (d.hdplay) {
@@ -158,18 +191,38 @@ export class TikTokExtractor extends BaseExtractor {
       })
     }
 
-    // Determine the absolute best download URL
-    const bestDownloadUrl = formatUrl(d.hdplay || d.play || d.wmplay)
-    if (!bestDownloadUrl) return null
+    // Determine primary download URL & media type
+    const isCarousel = mediaItems.length > 1
+    const isSingleImage = mediaItems.length === 1
+    const bestVideoUrl = formatUrl(d.hdplay || d.play || d.wmplay)
+
+    const primaryDownloadUrl = isCarousel || isSingleImage
+      ? (mediaItems[0]?.url || bestVideoUrl)
+      : bestVideoUrl
+
+    if (!primaryDownloadUrl) return null
+
+    const mediaType = isCarousel ? 'carousel' : isSingleImage ? 'image' : 'video'
+
+    // If it's a single video, also populate items with the single video item
+    if (mediaItems.length === 0 && bestVideoUrl) {
+      mediaItems.push({
+        id,
+        type: 'video',
+        url: bestVideoUrl,
+        thumbnail: formatUrl(d.cover || d.origin_cover),
+        qualities,
+      })
+    }
 
     return {
       id,
       platform: 'tiktok',
       originalUrl: targetUrl,
-      mediaType: 'video',
-      title: d.title || 'TikTok Video',
+      mediaType,
+      title: d.title || (isCarousel ? `TikTok Photo Carousel (${images.length} Photos)` : 'TikTok Video'),
       description: d.title,
-      thumbnail: formatUrl(d.cover || d.origin_cover),
+      thumbnail: formatUrl(d.cover || d.origin_cover || images[0]),
       duration: Number(d.duration) || 0,
       author: {
         id: d.author?.id,
@@ -177,8 +230,9 @@ export class TikTokExtractor extends BaseExtractor {
         nickname: d.author?.nickname,
         avatar: formatUrl(d.author?.avatar),
       },
-      downloadUrl: bestDownloadUrl,
+      downloadUrl: primaryDownloadUrl,
       qualities,
+      items: mediaItems.length > 0 ? mediaItems : undefined,
       music: d.music_info
         ? {
             id: d.music_info.id,
@@ -215,11 +269,45 @@ export class TikTokExtractor extends BaseExtractor {
     const json = await response.json()
     const d = json?.data || json
 
-    if (!d || (!d.video && !d.video_hd && !d.video_watermark && !d.url)) {
+    const rawImages = d?.images || d?.photos || []
+    const hasImages = Array.isArray(rawImages) && rawImages.length > 0
+
+    if (!d || (!d.video && !d.video_hd && !d.video_watermark && !d.url && !hasImages)) {
       return null
     }
 
     const qualities: MediaDownloadOption[] = []
+    const mediaItems: MediaItem[] = []
+    const id = d.id || extractTikTokId(targetUrl) || String(Date.now())
+
+    if (hasImages) {
+      rawImages.forEach((img: unknown, idx: number) => {
+        const imgUrl = typeof img === 'string' ? img : (img as { url?: string; display_url?: string })?.url || (img as { display_url?: string })?.display_url
+        if (imgUrl) {
+          mediaItems.push({
+            id: `${id}-img-${idx + 1}`,
+            type: 'image',
+            url: imgUrl,
+            thumbnail: imgUrl,
+            qualities: [
+              {
+                quality: `HD Photo ${idx + 1} (JPG)`,
+                url: imgUrl,
+                format: 'jpg',
+                hasWatermark: false,
+              },
+            ],
+          })
+          qualities.push({
+            quality: `Photo ${idx + 1} (HD)`,
+            url: imgUrl,
+            format: 'jpg',
+            hasWatermark: false,
+          })
+        }
+      })
+    }
+
     const hdUrl = d.video_hd || d.video?.hd || d.video
     const sdUrl = d.video || d.url
     const wmUrl = d.video_watermark || d.video_wm
@@ -260,17 +348,21 @@ export class TikTokExtractor extends BaseExtractor {
       })
     }
 
-    const downloadUrl = hdUrl || sdUrl || wmUrl
+    const isCarousel = mediaItems.length > 1
+    const isSingleImage = mediaItems.length === 1
+    const downloadUrl = (hasImages && mediaItems[0]?.url) || hdUrl || sdUrl || wmUrl
     if (!downloadUrl) return null
 
+    const mediaType = isCarousel ? 'carousel' : isSingleImage ? 'image' : 'video'
+
     return {
-      id: d.id || extractTikTokId(targetUrl) || String(Date.now()),
+      id,
       platform: 'tiktok',
       originalUrl: targetUrl,
-      mediaType: 'video',
-      title: d.title || d.desc || 'TikTok Video',
+      mediaType,
+      title: d.title || d.desc || (isCarousel ? `TikTok Photo Carousel (${mediaItems.length} Photos)` : 'TikTok Video'),
       description: d.desc || d.title,
-      thumbnail: d.cover || d.thumbnail || d.dynamic_cover || '',
+      thumbnail: d.cover || d.thumbnail || d.dynamic_cover || (mediaItems[0]?.thumbnail || ''),
       duration: Number(d.duration) || 0,
       author: {
         username: d.author?.unique_id ? `@${d.author.unique_id}` : (d.author?.name ? `@${d.author.name}` : '@tiktok.creator'),
@@ -279,6 +371,7 @@ export class TikTokExtractor extends BaseExtractor {
       },
       downloadUrl,
       qualities,
+      items: mediaItems.length > 0 ? mediaItems : undefined,
       statistics: {
         likes: d.stats?.likeCount,
         views: d.stats?.playCount,

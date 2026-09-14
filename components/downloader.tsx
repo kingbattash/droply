@@ -54,10 +54,10 @@ export function Downloader() {
             htmlFor="media-url-input"
             className="text-[13px] font-medium text-[#17253d]"
           >
-            Video or Reel URL
+            Post, Video, or Carousel URL
           </label>
           <span className="text-[11px] text-[#616161]">
-            Public TikTok or Instagram link
+            Public TikTok or Instagram link (Videos, Photos & Carousels)
           </span>
         </div>
 
@@ -72,7 +72,7 @@ export function Downloader() {
               id="media-url-input"
               value={url}
               onChange={(event) => setUrl(event.target.value)}
-              placeholder="https://www.tiktok.com/@user/video/... or https://www.instagram.com/reel/..."
+              placeholder="Paste Instagram post/reel or TikTok video/photo slideshow link..."
               className="h-11 min-w-0 flex-1 bg-transparent pr-2 text-[13px] text-[#17253d] placeholder:text-[#616161]/70 focus:outline-none"
               type="url"
               required
@@ -118,7 +118,7 @@ export function Downloader() {
         </div>
 
         <p id="media-url-helper" className="text-[11px] text-[#616161]">
-          Paste any public post URL to extract HD media, original bitrates, and isolated audio streams.
+          Paste any public post URL to extract HD media, photo carousels, original bitrates, and isolated audio streams.
         </p>
       </form>
 

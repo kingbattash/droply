@@ -85,8 +85,8 @@ export function isShortenedUrl(urlStr: string): boolean {
 export function extractTikTokId(urlStr: string): string | null {
   try {
     const url = new URL(urlStr)
-    // Matches /@username/video/1234567890123456789 or /v/1234567890123456789 or /embed/v2/1234567890123456789
-    const match = url.pathname.match(/\/(?:video|v|embed\/v2)\/(\d+)/i)
+    // Matches /@username/video/1234567890123456789 or /@username/photo/1234567890123456789 or /v/1234567890123456789 or /embed/v2/1234567890123456789
+    const match = url.pathname.match(/\/(?:video|photo|v|embed\/v2)\/(\d+)/i)
     if (match?.[1]) {
       return match[1]
     }

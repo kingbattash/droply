@@ -11,6 +11,7 @@ import {
   ExtractOptions,
   ExtractorError,
   MediaDownloadOption,
+  MediaItem,
   MediaMetadata,
   SupportedPlatform,
 } from '../types'
@@ -69,7 +70,7 @@ export class InstagramExtractor extends BaseExtractor {
     }
 
     throw new ExtractorError(
-      'Unable to extract video from this Instagram link. The Reel may be private, restricted, or deleted.',
+      'Unable to extract media from this Instagram link. The post may be private, restricted, or deleted.',
       'INSTAGRAM_EXTRACTION_FAILED',
       404
     )
@@ -79,7 +80,7 @@ export class InstagramExtractor extends BaseExtractor {
    * Strategy 1: Extract from Instagram's official public embed endpoint
    */
   private async extractFromEmbed(shortcode: string, originalUrl: string, timeout: number): Promise<MediaMetadata | null> {
-    const embedUrl = `https://www.instagram.com/reel/${shortcode}/embed/captioned/`
+    const embedUrl = `https://www.instagram.com/p/${shortcode}/embed/captioned/`
     const response = await resilientFetch(embedUrl, {
       headers: {
         'User-Agent': getRandomUserAgent(),
@@ -92,30 +93,9 @@ export class InstagramExtractor extends BaseExtractor {
     if (!response.ok) return null
     const html = await response.text()
 
-    // 1. Look for video_url in script tags
-    let videoUrl: string | null = null
-    let displayUrl: string | null = null
     let username: string | null = null
     let caption: string | null = null
     let likesCount: number | undefined
-
-    // Video URL matching regexes
-    const videoUrlMatch = html.match(/"video_url"\s*:\s*"([^"]+)"/) ||
-      html.match(/\\?"video_url\\?"\s*:\s*\\?"([^"\\]+)/) ||
-      html.match(/class="EmbeddedMediaVideo"[\s\S]*?src="([^"]+)"/)
-
-    if (videoUrlMatch?.[1]) {
-      videoUrl = decodeJsonString(videoUrlMatch[1])
-    }
-
-    // Display / Thumbnail URL matching
-    const displayUrlMatch = html.match(/"display_url"\s*:\s*"([^"]+)"/) ||
-      html.match(/class="EmbeddedMediaImage"[\s\S]*?src="([^"]+)"/) ||
-      html.match(/"thumbnail_url"\s*:\s*"([^"]+)"/)
-
-    if (displayUrlMatch?.[1]) {
-      displayUrl = decodeJsonString(displayUrlMatch[1])
-    }
 
     // Username matching
     const usernameMatch = html.match(/class="UsernameText">([^<]+)<\/span>/) ||
@@ -140,41 +120,166 @@ export class InstagramExtractor extends BaseExtractor {
       likesCount = parseCounter(likesMatch[1])
     }
 
-    if (!videoUrl) {
+    const mediaItems: MediaItem[] = []
+    const qualities: MediaDownloadOption[] = []
+
+    // Try extracting JSON payload embedded in script tags (e.g. window.__additionalDataLoaded or shortcode_media)
+    try {
+      const jsonMatch = html.match(/<script[^>]*>[\s\S]*?window\.__additionalDataLoaded\s*\(\s*'[^']*'\s*,\s*(\{[\s\S]*?\})\s*\)\s*;/i) ||
+        html.match(/<script[^>]*>\s*(\{"graphql"[\s\S]*?\})\s*<\/script>/i) ||
+        html.match(/<script[^>]*>\s*(\{"shortcode_media"[\s\S]*?\})\s*<\/script>/i)
+
+      if (jsonMatch?.[1]) {
+        const parsed = JSON.parse(jsonMatch[1])
+        const shortcodeMedia = parsed?.shortcode_media || parsed?.graphql?.shortcode_media || parsed?.items?.[0]
+
+        if (shortcodeMedia) {
+          // Check for carousel sidecar
+          const sidecarEdges = shortcodeMedia?.edge_sidecar_to_children?.edges
+          if (Array.isArray(sidecarEdges) && sidecarEdges.length > 0) {
+            sidecarEdges.forEach((edge: { node?: Record<string, unknown> }, idx: number) => {
+              const node = edge?.node
+              if (!node) return
+              const isVideo = Boolean(node.is_video)
+              const itemUrl = (isVideo ? node.video_url : node.display_url) as string
+              const thumbUrl = (node.display_url || node.thumbnail_src) as string
+
+              if (itemUrl) {
+                const itemQualities: MediaDownloadOption[] = isVideo
+                  ? [
+                      { quality: `Video ${idx + 1} (Full HD)`, url: itemUrl, format: 'mp4', hasWatermark: false },
+                    ]
+                  : [
+                      { quality: `Photo ${idx + 1} (HD)`, url: itemUrl, format: 'jpg', hasWatermark: false },
+                    ]
+
+                mediaItems.push({
+                  id: `${shortcode}-item-${idx + 1}`,
+                  type: isVideo ? 'video' : 'image',
+                  url: itemUrl,
+                  thumbnail: thumbUrl,
+                  qualities: itemQualities,
+                })
+
+                qualities.push(...itemQualities)
+              }
+            })
+          }
+        }
+      }
+    } catch {
+      // Fall through to regex extraction
+    }
+
+    // Video URL matching regexes
+    let videoUrl: string | null = null
+    const videoUrlMatch = html.match(/"video_url"\s*:\s*"([^"]+)"/) ||
+      html.match(/\\?"video_url\\?"\s*:\s*\\?"([^"\\]+)/) ||
+      html.match(/class="EmbeddedMediaVideo"[\s\S]*?src="([^"]+)"/)
+
+    if (videoUrlMatch?.[1]) {
+      videoUrl = decodeJsonString(videoUrlMatch[1])
+    }
+
+    // Display / Thumbnail URL matching
+    let displayUrl: string | null = null
+    const displayUrlMatch = html.match(/"display_url"\s*:\s*"([^"]+)"/) ||
+      html.match(/class="EmbeddedMediaImage"[\s\S]*?src="([^"]+)"/) ||
+      html.match(/"thumbnail_url"\s*:\s*"([^"]+)"/)
+
+    if (displayUrlMatch?.[1]) {
+      displayUrl = decodeJsonString(displayUrlMatch[1])
+    }
+
+    // If carousel nodes weren't found via JSON, check regex matches for multiple images
+    if (mediaItems.length === 0) {
+      // Find all display_url instances
+      const allDisplayUrls = Array.from(html.matchAll(/"display_url"\s*:\s*"([^"]+)"/g)).map(m => decodeJsonString(m[1]))
+      const uniqueDisplayUrls = Array.from(new Set(allDisplayUrls))
+
+      if (uniqueDisplayUrls.length > 1) {
+        uniqueDisplayUrls.forEach((imgUrl, idx) => {
+          mediaItems.push({
+            id: `${shortcode}-img-${idx + 1}`,
+            type: 'image',
+            url: imgUrl,
+            thumbnail: imgUrl,
+            qualities: [
+              {
+                quality: `HD Photo ${idx + 1} (JPG)`,
+                url: imgUrl,
+                format: 'jpg',
+                hasWatermark: false,
+              },
+            ],
+          })
+          qualities.push({
+            quality: `Photo ${idx + 1} (HD)`,
+            url: imgUrl,
+            format: 'jpg',
+            hasWatermark: false,
+          })
+        })
+      } else if (videoUrl) {
+        mediaItems.push({
+          id: shortcode,
+          type: 'video',
+          url: videoUrl,
+          thumbnail: displayUrl || '',
+          qualities: [
+            { quality: '1080p (Full HD)', url: videoUrl, format: 'mp4', hasWatermark: false },
+            { quality: '720p (HD)', url: videoUrl, format: 'mp4', hasWatermark: false },
+          ],
+        })
+        qualities.push(
+          { quality: '1080p (Full HD)', url: videoUrl, format: 'mp4', hasWatermark: false },
+          { quality: '720p (HD)', url: videoUrl, format: 'mp4', hasWatermark: false },
+        )
+      } else if (displayUrl) {
+        mediaItems.push({
+          id: shortcode,
+          type: 'image',
+          url: displayUrl,
+          thumbnail: displayUrl,
+          qualities: [
+            { quality: 'HD Photo (JPG)', url: displayUrl, format: 'jpg', hasWatermark: false },
+          ],
+        })
+        qualities.push({
+          quality: 'HD Photo (JPG)',
+          url: displayUrl,
+          format: 'jpg',
+          hasWatermark: false,
+        })
+      }
+    }
+
+    if (mediaItems.length === 0) {
       return null
     }
 
-    const qualities: MediaDownloadOption[] = [
-      {
-        quality: '1080p (Full HD)',
-        url: videoUrl,
-        format: 'mp4',
-        hasWatermark: false,
-      },
-      {
-        quality: '720p (HD)',
-        url: videoUrl,
-        format: 'mp4',
-        hasWatermark: false,
-      },
-    ]
+    const isCarousel = mediaItems.length > 1
+    const isImage = !isCarousel && mediaItems[0]?.type === 'image'
+    const mediaType = isCarousel ? 'carousel' : isImage ? 'image' : 'video'
+    const primaryDownloadUrl = mediaItems[0]?.url || videoUrl || displayUrl || ''
 
     return {
       id: shortcode,
       platform: 'instagram',
       originalUrl,
-      mediaType: 'video',
-      title: caption ? (caption.length > 80 ? `${caption.slice(0, 77)}...` : caption) : `Instagram Reel (${shortcode})`,
+      mediaType,
+      title: caption ? (caption.length > 80 ? `${caption.slice(0, 77)}...` : caption) : (isCarousel ? `Instagram Carousel (${mediaItems.length} items)` : `Instagram Post (${shortcode})`),
       description: caption || undefined,
-      thumbnail: displayUrl || '',
-      duration: 30, // Approximate standard Reel duration
+      thumbnail: displayUrl || mediaItems[0]?.thumbnail || '',
+      duration: isImage || isCarousel ? 0 : 30,
       author: {
         username: username ? (username.startsWith('@') ? username : `@${username}`) : '@instagram.creator',
         nickname: username?.replace(/^@/, ''),
         url: username ? `https://www.instagram.com/${username.replace(/^@/, '')}/` : undefined,
       },
-      downloadUrl: videoUrl,
+      downloadUrl: primaryDownloadUrl,
       qualities,
+      items: mediaItems.length > 0 ? mediaItems : undefined,
       statistics: {
         likes: likesCount,
       },
@@ -190,7 +295,6 @@ export class InstagramExtractor extends BaseExtractor {
       `https://snapinsta.app/action.php`,
     ]
 
-    // Fast query to primary public resolver
     try {
       const response = await resilientFetch(endpoints[0], {
         headers: {
@@ -202,34 +306,79 @@ export class InstagramExtractor extends BaseExtractor {
 
       if (response.ok) {
         const data = await response.json()
-        const video = data?.data?.video || data?.video || data?.data?.downloads?.[0]?.url || data?.download_url
+        const payload = data?.data || data
 
-        if (video) {
-          const thumbnail = data?.data?.thumbnail || data?.thumbnail || ''
-          const title = data?.data?.title || data?.title || `Instagram Reel (${shortcode})`
+        const mediaItems: MediaItem[] = []
+        const qualities: MediaDownloadOption[] = []
+
+        // Check for multiple downloads/items
+        const downloads = payload?.downloads || payload?.media || payload?.carousel || payload?.items
+        if (Array.isArray(downloads) && downloads.length > 0) {
+          downloads.forEach((item: Record<string, unknown>, idx: number) => {
+            const itemUrl = (item?.url || item?.download_url || item?.video || item?.image) as string
+            const isVid = item?.type === 'video' || (typeof itemUrl === 'string' && (itemUrl.includes('.mp4') || itemUrl.includes('video')))
+            const thumb = (item?.thumbnail || item?.thumb || itemUrl) as string
+
+            if (itemUrl) {
+              const itemType = isVid ? 'video' : 'image'
+              const format = isVid ? 'mp4' : 'jpg'
+              const qualityLabel = isVid ? `Video ${idx + 1} (HD)` : `Photo ${idx + 1} (HD)`
+
+              mediaItems.push({
+                id: `${shortcode}-${idx + 1}`,
+                type: itemType,
+                url: itemUrl,
+                thumbnail: thumb,
+                qualities: [{ quality: qualityLabel, url: itemUrl, format, hasWatermark: false }],
+              })
+
+              qualities.push({
+                quality: qualityLabel,
+                url: itemUrl,
+                format,
+                hasWatermark: false,
+              })
+            }
+          })
+        }
+
+        const video = payload?.video || payload?.download_url
+        const image = payload?.image || payload?.thumbnail
+        const thumbnail = payload?.thumbnail || image || (mediaItems[0]?.thumbnail || '')
+        const title = payload?.title || `Instagram Post (${shortcode})`
+
+        if (mediaItems.length > 0 || video || image) {
+          const isCarousel = mediaItems.length > 1
+          const isImage = !isCarousel && (mediaItems[0]?.type === 'image' || (!video && Boolean(image)))
+          const mediaType = isCarousel ? 'carousel' : isImage ? 'image' : 'video'
+          const primaryDownloadUrl = mediaItems[0]?.url || video || image
+
+          if (mediaItems.length === 0) {
+            if (video) {
+              qualities.push({ quality: '1080p (Full HD)', url: video, format: 'mp4', hasWatermark: false })
+              mediaItems.push({ id: shortcode, type: 'video', url: video, thumbnail, qualities })
+            } else if (image) {
+              qualities.push({ quality: 'HD Photo (JPG)', url: image, format: 'jpg', hasWatermark: false })
+              mediaItems.push({ id: shortcode, type: 'image', url: image, thumbnail: image, qualities })
+            }
+          }
 
           return {
             id: shortcode,
             platform: 'instagram',
             originalUrl,
-            mediaType: 'video',
+            mediaType,
             title,
             thumbnail,
-            duration: 30,
+            duration: isImage || isCarousel ? 0 : 30,
             author: {
-              username: data?.data?.author?.username ? `@${data.data.author.username}` : '@instagram.creator',
-              nickname: data?.data?.author?.name,
-              avatar: data?.data?.author?.avatar,
+              username: payload?.author?.username ? `@${payload.author.username}` : '@instagram.creator',
+              nickname: payload?.author?.name,
+              avatar: payload?.author?.avatar,
             },
-            downloadUrl: video,
-            qualities: [
-              {
-                quality: '1080p (Full HD)',
-                url: video,
-                format: 'mp4',
-                hasWatermark: false,
-              },
-            ],
+            downloadUrl: primaryDownloadUrl,
+            qualities,
+            items: mediaItems.length > 0 ? mediaItems : undefined,
           }
         }
       }
@@ -264,40 +413,51 @@ export class InstagramExtractor extends BaseExtractor {
     const ogTitleMatch = html.match(/<meta\s+property="og:title"\s+content="([^"]+)"/i) ||
       html.match(/<meta\s+content="([^"]+)"\s+property="og:title"/i)
 
-    if (!ogVideoMatch?.[1]) {
-      return null
-    }
-
-    const videoUrl = decodeHtmlEntities(ogVideoMatch[1])
+    const videoUrl = ogVideoMatch?.[1] ? decodeHtmlEntities(ogVideoMatch[1]) : null
     const thumbnail = ogImageMatch?.[1] ? decodeHtmlEntities(ogImageMatch[1]) : ''
     const rawTitle = ogTitleMatch?.[1] ? decodeHtmlEntities(ogTitleMatch[1]) : ''
+
+    if (!videoUrl && !thumbnail) {
+      return null
+    }
 
     let username = '@instagram.creator'
     if (rawTitle.includes('on Instagram:')) {
       username = `@${rawTitle.split('on Instagram:')[0].trim()}`
     }
 
+    const isVideo = Boolean(videoUrl)
+    const mediaType = isVideo ? 'video' : 'image'
+    const downloadUrl = videoUrl || thumbnail
+    const qualities: MediaDownloadOption[] = videoUrl
+      ? [{ quality: '1080p (Full HD)', url: videoUrl, format: 'mp4', hasWatermark: false }]
+      : [{ quality: 'HD Photo (JPG)', url: thumbnail, format: 'jpg', hasWatermark: false }]
+
+    const items: MediaItem[] = [
+      {
+        id: shortcode,
+        type: mediaType,
+        url: downloadUrl,
+        thumbnail,
+        qualities,
+      },
+    ]
+
     return {
       id: shortcode,
       platform: 'instagram',
       originalUrl,
-      mediaType: 'video',
-      title: rawTitle || `Instagram Reel (${shortcode})`,
+      mediaType,
+      title: rawTitle || `Instagram Post (${shortcode})`,
       description: rawTitle,
       thumbnail,
-      duration: 30,
+      duration: isVideo ? 30 : 0,
       author: {
         username,
       },
-      downloadUrl: videoUrl,
-      qualities: [
-        {
-          quality: '1080p (Full HD)',
-          url: videoUrl,
-          format: 'mp4',
-          hasWatermark: false,
-        },
-      ],
+      downloadUrl,
+      qualities,
+      items,
     }
   }
 }

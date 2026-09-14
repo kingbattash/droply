@@ -35,7 +35,21 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const contentType = response.headers.get('content-type') || 'video/mp4'
+    let contentType = response.headers.get('content-type')
+    if (!contentType || contentType === 'application/octet-stream') {
+      const lowerFilename = filename.toLowerCase()
+      if (lowerFilename.endsWith('.jpg') || lowerFilename.endsWith('.jpeg')) {
+        contentType = 'image/jpeg'
+      } else if (lowerFilename.endsWith('.png')) {
+        contentType = 'image/png'
+      } else if (lowerFilename.endsWith('.webp')) {
+        contentType = 'image/webp'
+      } else if (lowerFilename.endsWith('.mp3')) {
+        contentType = 'audio/mpeg'
+      } else {
+        contentType = 'video/mp4'
+      }
+    }
     const contentLength = response.headers.get('content-length')
 
     const headers: Record<string, string> = {

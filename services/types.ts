@@ -43,6 +43,16 @@ export interface MusicTrack {
   duration?: number
 }
 
+export interface MediaItem {
+  id?: string
+  type: 'video' | 'image'
+  url: string // primary direct download URL for this item
+  thumbnail?: string
+  width?: number
+  height?: number
+  qualities?: MediaDownloadOption[]
+}
+
 export interface MediaMetadata {
   id: string
   platform: SupportedPlatform
@@ -51,10 +61,11 @@ export interface MediaMetadata {
   title: string
   description?: string
   thumbnail: string
-  duration: number // in seconds
+  duration: number // in seconds (0 for photos/carousels)
   author: AuthorInfo
-  downloadUrl: string // primary highest quality direct stream/file
+  downloadUrl: string // primary highest quality direct stream/file (or first item for carousel)
   qualities: MediaDownloadOption[]
+  items?: MediaItem[] // For multiple images / carousel items / multi-media posts
   music?: MusicTrack
   statistics?: MediaStatistics
   createdAt?: string
