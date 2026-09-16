@@ -84,6 +84,14 @@ const fallbackDemoMedia = {
       },
     ],
   },
+  youtube: {
+    title: 'Cinematic Mountain Landscapes in 4K',
+    uploader: '@earth.visuals',
+    thumbnail: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=1200&q=85',
+    downloadUrl: 'https://cdn.coverr.co/videos/coverr-aerial-view-of-a-city-at-sunset-1575/1080p.mp4',
+    duration: 120,
+    mediaType: 'video' as const,
+  },
 } satisfies Record<Platform, Omit<ExtractionResponse, 'success' | 'platform'>>
 
 export async function extractMedia({ url, platform }: ExtractionRequest): Promise<ExtractionResponse> {

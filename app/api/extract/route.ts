@@ -13,7 +13,7 @@ export async function POST(request: Request) {
 
     if (!url || !isSupportedMediaUrl(url)) {
       return NextResponse.json(
-        { success: false, error: 'Enter a valid public TikTok or Instagram URL.' },
+        { success: false, error: 'Enter a valid public TikTok, Instagram, or YouTube URL.' },
         { status: 400 },
       )
     }

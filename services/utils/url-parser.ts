@@ -1,5 +1,5 @@
 /**
- * URL parsing, sanitization, and ID extraction for TikTok and Instagram.
+ * URL parsing, sanitization, and ID extraction for TikTok, Instagram, and YouTube.
  */
 
 import { SupportedPlatform } from '../types'
@@ -16,7 +16,7 @@ export function cleanMediaUrl(rawUrl: string): string {
       'igsh', 'utm_source', 'utm_medium', 'utm_campaign', 'utm_term',
       'utm_content', 'share_app_id', 'share_item_id', 'social_share_type',
       'tt_from', 'sender_device', 'sender_web_id', 'is_from_webapp',
-      'share_author_id', 'preview_pb', '_r', 'fbclid'
+      'share_author_id', 'preview_pb', '_r', 'fbclid', 'feature', 'si'
     ]
 
     for (const p of paramsToDrop) {
@@ -54,6 +54,14 @@ export function detectPlatform(urlStr: string): SupportedPlatform | null {
       return 'instagram'
     }
 
+    if (
+      host === 'youtube.com' ||
+      host.endsWith('.youtube.com') ||
+      host === 'youtu.be'
+    ) {
+      return 'youtube'
+    }
+
     return null
   } catch {
     return null
@@ -61,17 +69,18 @@ export function detectPlatform(urlStr: string): SupportedPlatform | null {
 }
 
 /**
- * Checks whether a URL is a valid short link that requires expanding (e.g. vm.tiktok.com, vt.tiktok.com, ig.me)
+ * Checks whether a URL is a valid short link that requires expanding (e.g. vm.tiktok.com, vt.tiktok.com, ig.me, youtu.be)
  */
 export function isShortenedUrl(urlStr: string): boolean {
   try {
     const url = new URL(urlStr)
-    const host = url.hostname.toLowerCase()
+    const host = url.hostname.toLowerCase().replace(/^www\./, '')
     return (
       host === 'vm.tiktok.com' ||
       host === 'vt.tiktok.com' ||
       host === 't.tiktok.com' ||
       host === 'ig.me' ||
+      host === 'youtu.be' ||
       url.pathname.startsWith('/t/')
     )
   } catch {
@@ -121,6 +130,46 @@ export function extractInstagramShortcode(urlStr: string): string | null {
 }
 
 /**
+ * Extracts YouTube Video or Shorts ID from URL
+ */
+export function extractYouTubeId(urlStr: string): string | null {
+  try {
+    const url = new URL(urlStr.trim())
+    const host = url.hostname.toLowerCase().replace(/^www\./, '')
+
+    // Handle youtu.be/VIDEO_ID
+    if (host === 'youtu.be') {
+      const pathId = url.pathname.split('/').filter(Boolean)[0]
+      if (pathId && /^[a-zA-Z0-9_-]{11}$/.test(pathId)) {
+        return pathId
+      }
+    }
+
+    // Handle /watch?v=VIDEO_ID
+    const vParam = url.searchParams.get('v')
+    if (vParam && /^[a-zA-Z0-9_-]{11}$/.test(vParam)) {
+      return vParam
+    }
+
+    // Handle /shorts/VIDEO_ID, /embed/VIDEO_ID, /v/VIDEO_ID, /live/VIDEO_ID
+    const pathMatch = url.pathname.match(/\/(?:shorts|embed|v|live)\/([a-zA-Z0-9_-]{11})/i)
+    if (pathMatch?.[1]) {
+      return pathMatch[1]
+    }
+
+    // Fallback: any 11-char alphanumeric pattern in path
+    const genericMatch = url.pathname.match(/([a-zA-Z0-9_-]{11})/i)
+    if (genericMatch?.[1]) {
+      return genericMatch[1]
+    }
+
+    return null
+  } catch {
+    return null
+  }
+}
+
+/**
  * Normalizes and resolves short links to standard full URLs
  */
 export async function normalizeMediaUrl(rawUrl: string): Promise<{ resolvedUrl: string; platform: SupportedPlatform }> {
@@ -128,7 +177,7 @@ export async function normalizeMediaUrl(rawUrl: string): Promise<{ resolvedUrl: 
   let platform = detectPlatform(cleaned)
 
   if (!platform) {
-    throw new Error('Unsupported URL. Please provide a valid TikTok or Instagram link.')
+    throw new Error('Unsupported URL. Please provide a valid TikTok, Instagram, or YouTube link.')
   }
 
   let finalUrl = cleaned

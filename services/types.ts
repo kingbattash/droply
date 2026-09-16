@@ -2,7 +2,7 @@
  * Core types and interfaces for the Media Extraction Service
  */
 
-export type SupportedPlatform = 'tiktok' | 'instagram'
+export type SupportedPlatform = 'tiktok' | 'instagram' | 'youtube'
 
 export type MediaType = 'video' | 'image' | 'carousel' | 'audio'
 

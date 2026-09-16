@@ -135,14 +135,27 @@ export class InstagramExtractor extends BaseExtractor {
 
         if (shortcodeMedia) {
           // Check for carousel sidecar
-          const sidecarEdges = shortcodeMedia?.edge_sidecar_to_children?.edges
+          const sidecarEdges = shortcodeMedia?.edge_sidecar_to_children?.edges || shortcodeMedia?.carousel_media
           if (Array.isArray(sidecarEdges) && sidecarEdges.length > 0) {
-            sidecarEdges.forEach((edge: { node?: Record<string, unknown> }, idx: number) => {
-              const node = edge?.node
+            sidecarEdges.forEach((edgeItem: { node?: Record<string, unknown> } | Record<string, unknown>, idx: number) => {
+              const node = ((edgeItem as { node?: Record<string, unknown> })?.node || edgeItem) as Record<string, unknown>
               if (!node) return
               const isVideo = Boolean(node.is_video)
-              const itemUrl = (isVideo ? node.video_url : node.display_url) as string
-              const thumbUrl = (node.display_url || node.thumbnail_src) as string
+
+              // Extract highest resolution display resource if available
+              let bestDisplayUrl = (node.display_url || node.thumbnail_src) as string
+              if (Array.isArray(node.display_resources) && node.display_resources.length > 0) {
+                const sorted = [...node.display_resources].sort((a: { config_width?: number }, b: { config_width?: number }) => (b.config_width || 0) - (a.config_width || 0))
+                if (sorted[0]?.src) {
+                  bestDisplayUrl = sorted[0].src
+                }
+              }
+
+              // Extract best video url if available
+              let bestVideoUrl = (node.video_url || (Array.isArray(node.video_resources) && (node.video_resources as { src?: string }[])[0]?.src)) as string
+
+              const itemUrl = isVideo ? (bestVideoUrl || bestDisplayUrl) : bestDisplayUrl
+              const thumbUrl = bestDisplayUrl || (node.display_url as string)
 
               if (itemUrl) {
                 const itemQualities: MediaDownloadOption[] = isVideo

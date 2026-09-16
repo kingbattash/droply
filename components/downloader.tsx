@@ -12,8 +12,9 @@ export function Downloader() {
   const [loading, setLoading] = useState(false)
 
   const platform = useMemo<Platform | null>(() => {
-    if (url.includes('tiktok.com')) return 'tiktok'
-    if (url.includes('instagram.com')) return 'instagram'
+    if (url.includes('tiktok.com') || url.includes('douyin.com')) return 'tiktok'
+    if (url.includes('instagram.com') || url.includes('instagr.am') || url.includes('ig.me')) return 'instagram'
+    if (url.includes('youtube.com') || url.includes('youtu.be')) return 'youtube'
     return null
   }, [url])
 
@@ -54,10 +55,10 @@ export function Downloader() {
             htmlFor="media-url-input"
             className="text-[13px] font-medium text-[#17253d]"
           >
-            Post, Video, or Carousel URL
+            Video, Photo Carousel, or Shorts URL
           </label>
           <span className="text-[11px] text-[#616161]">
-            Public TikTok or Instagram link (Videos, Photos & Carousels)
+            TikTok, Instagram, or YouTube (Videos, Carousels, Photos & Audio)
           </span>
         </div>
 
@@ -72,7 +73,7 @@ export function Downloader() {
               id="media-url-input"
               value={url}
               onChange={(event) => setUrl(event.target.value)}
-              placeholder="Paste Instagram post/reel or TikTok video/photo slideshow link..."
+              placeholder="Paste TikTok, Instagram post/reel/carousel, or YouTube video/Shorts link..."
               className="h-11 min-w-0 flex-1 bg-transparent pr-2 text-[13px] text-[#17253d] placeholder:text-[#616161]/70 focus:outline-none"
               type="url"
               required
@@ -118,7 +119,7 @@ export function Downloader() {
         </div>
 
         <p id="media-url-helper" className="text-[11px] text-[#616161]">
-          Paste any public post URL to extract HD media, photo carousels, original bitrates, and isolated audio streams.
+          Paste any public post URL to extract Full HD 1080p media, photo albums & carousels, original bitrates, and isolated audio streams.
         </p>
       </form>
 

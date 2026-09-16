@@ -33,7 +33,7 @@ export default function Page() {
               <span className="text-base font-semibold">Droply</span>
             </a>
             <span className="hidden text-xs text-[#616161] sm:inline">|</span>
-            <span className="hidden text-xs text-[#616161] sm:inline">Media Extractor for TikTok & Instagram</span>
+            <span className="hidden text-xs text-[#616161] sm:inline">Media Extractor for TikTok, Instagram & YouTube</span>
           </div>
 
           <nav className="flex items-center gap-6 text-xs text-[#616161]">
@@ -51,10 +51,10 @@ export default function Page() {
         {/* Display Hero Section */}
         <section className="mb-10 text-center">
           <h1 className="text-[28px] sm:text-[40px] font-medium leading-[1.2] tracking-[-1px] text-[#17253d]">
-            Extract TikTok & Instagram in High Definition
+            Extract TikTok, Instagram & YouTube in High Definition
           </h1>
           <p className="mx-auto mt-3 max-w-2xl text-[13px] sm:text-[14px] leading-[1.45] tracking-[-0.48px] text-[#616161]">
-            Enter a public TikTok video or Instagram Reel URL to extract high-definition video files, audio tracks, and previews instantly.
+            Enter a public TikTok video/slideshow, Instagram post/reel/carousel, or YouTube video/Shorts URL to extract high-definition media files, multiple images, audio tracks, and previews instantly.
           </p>
         </section>
 

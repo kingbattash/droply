@@ -7,6 +7,7 @@
 import { BaseExtractor } from './base/base-extractor'
 import { InstagramExtractor } from './instagram/instagram-extractor.service'
 import { TikTokExtractor } from './tiktok/tiktok-extractor.service'
+import { YouTubeExtractor } from './youtube/youtube-extractor.service'
 import {
   ExtractOptions,
   ExtractorError,
@@ -23,6 +24,7 @@ export class MediaExtractorService {
     // Register default platform extractors
     this.registerExtractor(new TikTokExtractor())
     this.registerExtractor(new InstagramExtractor())
+    this.registerExtractor(new YouTubeExtractor())
   }
 
   /**
